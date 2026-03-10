@@ -1,9 +1,13 @@
-"""Launch UR3 teleop stack: ur_robot_driver + MoveIt Servo + rosbridge + twist relay."""
+"""Launch UR3 teleop stack:
+   ur_robot_driver + MoveIt (with Servo) + rosbridge + twist relay.
+
+   Reuses UR official launch files instead of reinventing them.
+"""
 
 import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.launch_description_sources import PythonLaunchDescriptionSource, AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -11,14 +15,19 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     robot_ip = LaunchConfiguration("robot_ip")
+    use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+
     robot_ip_arg = DeclareLaunchArgument(
         "robot_ip",
         default_value=os.environ.get("ROBOT_IP", "192.168.1.2"),
-        description="IP address of the UR3 robot",
+    )
+    use_fake_arg = DeclareLaunchArgument(
+        "use_fake_hardware",
+        default_value="false",
     )
 
-    # UR robot driver
-    ur_driver_launch = IncludeLaunchDescription(
+    # 1. UR robot driver (ros2_control, robot_state_publisher, controllers)
+    ur_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             get_package_share_directory("ur_robot_driver"),
             "/launch/ur_control.launch.py",
@@ -26,48 +35,36 @@ def generate_launch_description():
         launch_arguments={
             "ur_type": "ur3",
             "robot_ip": robot_ip,
+            "use_fake_hardware": use_fake_hardware,
             "launch_rviz": "false",
-            "use_fake_hardware": "false",
+            "initial_joint_controller": "forward_position_controller",
+            "activate_joint_controller": "true",
         }.items(),
     )
 
-    # MoveIt Servo
-    servo_params = {
-        "moveit_servo": {
-            "use_gazebo": False,
-            "command_in_type": "speed_units",
-            "scale": {
-                "linear": 0.3,
-                "rotational": 0.5,
-                "joint": 0.5,
-            },
-            "publish_period": 0.008,  # 125 Hz
-            "incoming_command_timeout": 0.15,
-            "command_out_type": "trajectory_msgs/JointTrajectory",
-            "publish_joint_positions": True,
-            "publish_joint_velocities": True,
-            "robot_link_command_frame": "base_link",
-            "ee_frame_name": "tool0",
-            "planning_frame": "base_link",
-        }
-    }
-
-    servo_node = Node(
-        package="moveit_servo",
-        executable="servo_node",
-        parameters=[servo_params],
-        output="screen",
+    # 2. MoveIt + Servo (UR official launch, includes move_group + servo_node)
+    ur_moveit_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            get_package_share_directory("ur_moveit_config"),
+            "/launch/ur_moveit.launch.py",
+        ]),
+        launch_arguments={
+            "ur_type": "ur3",
+            "launch_rviz": "false",
+            "launch_servo": "true",
+            "use_sim_time": "false",
+        }.items(),
     )
 
-    # rosbridge for macOS WebSocket connection
+    # 3. rosbridge for macOS WebSocket connection
     rosbridge_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
+        AnyLaunchDescriptionSource([
             get_package_share_directory("rosbridge_server"),
             "/launch/rosbridge_websocket_launch.xml",
         ]),
     )
 
-    # Twist relay (safety watchdog)
+    # 4. Twist relay (safety watchdog between rosbridge and servo)
     twist_relay = Node(
         package="sm_teleop",
         executable="twist_relay_node",
@@ -75,7 +72,7 @@ def generate_launch_description():
             "input_topic": "/spacemouse/twist",
             "output_topic": "/servo_node/delta_twist_cmds",
             "timeout_sec": 0.15,
-            "frame_id": "base_link",
+            "frame_id": "tool0",
             "publish_rate": 125.0,
         }],
         output="screen",
@@ -83,8 +80,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         robot_ip_arg,
-        ur_driver_launch,
-        servo_node,
+        use_fake_arg,
+        ur_control_launch,
+        ur_moveit_launch,
         rosbridge_launch,
         twist_relay,
     ])

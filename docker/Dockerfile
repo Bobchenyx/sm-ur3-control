@@ -24,7 +24,7 @@ COPY ros2_ws/src /ros2_ws/src
 
 # Build workspace
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
-    colcon build --symlink-install && \
+    colcon build && \
     echo "source /ros2_ws/install/setup.bash" >> /root/.bashrc
 
 # Copy entrypoint

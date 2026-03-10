@@ -1,15 +1,11 @@
+# Override UR servo defaults for SpaceMouse teleoperation
+# Base config comes from ur_moveit_config/config/ur_servo.yaml
+# Only list overrides here
 moveit_servo:
-  use_gazebo: false
   command_in_type: "speed_units"
+  incoming_command_timeout: 0.15
+  publish_period: 0.008  # 125 Hz
   scale:
     linear: 0.3
     rotational: 0.5
     joint: 0.5
-  publish_period: 0.008
-  incoming_command_timeout: 0.15
-  command_out_type: "trajectory_msgs/JointTrajectory"
-  publish_joint_positions: true
-  publish_joint_velocities: true
-  robot_link_command_frame: "base_link"
-  ee_frame_name: "tool0"
-  planning_frame: "base_link"

@@ -77,6 +77,44 @@ All tunable parameters in `config/teleop_config.yaml`:
 - `ros2_ws/src/sm_teleop/` — ROS2 package with twist relay node and launch file
 - `docker/` — Dockerfile (ROS2 Humble + ur_robot_driver + MoveIt Servo + rosbridge)
 
+## Verification Status / 验证状态
+
+各组件验证情况，标注验证方式和日期。
+
+### ✅ Verified / 已验证
+
+| Component | How Verified | Date |
+|-----------|-------------|------|
+| `src/spacemouse_reader.py` | dry-run 实测，6轴数据 + 按钮均正常响应 | 2026-03-10 |
+| `src/teleop_direct.py --dry-run` | 实际运行，确认 SpaceMouse 数据读取、deadzone 过滤、axis mapping、dead-man switch 均工作 | 2026-03-10 |
+| `docker/Dockerfile` | `docker compose build` 成功，所有 apt 包安装通过，colcon build 通过 | 2026-03-10 |
+| `ros2_ws/src/sm_teleop/` (colcon build) | Docker 内 colcon build 成功，`twist_relay_node` 可执行文件正确安装到 `lib/sm_teleop/` | 2026-03-10 |
+| Docker ROS2 launch (fake hardware) | `ros2 launch sm_teleop ur3_teleop.launch.py use_fake_hardware:=true` — 所有 11 个节点启动成功：ros2_control, move_group ("You can start planning now!"), servo_node_main, rosbridge (port 9090), twist_relay_node | 2026-03-10 |
+| macOS → rosbridge 连通性 | 从 macOS 用 roslibpy 连接 Docker 内 rosbridge，确认 57 个 topic 可见，包括 `/servo_node/delta_twist_cmds` 和 `/spacemouse/twist` | 2026-03-10 |
+| conda 环境 `sm-ur3` | Python 3.12, hidapi/numpy/pyyaml/roslibpy 均安装验证通过 | 2026-03-10 |
+
+### ❌ Not Yet Verified / 未验证
+
+| Component | What Needs Testing | Blocker |
+|-----------|-------------------|---------|
+| `src/ur3_controller.py` | 连接真实 UR3，验证 RTDE 连接、`speedL` 指令、workspace enforcement、emergency stop | 需要 UR3 机械臂在线 + `ur-rtde` pip 安装 |
+| `src/teleop_direct.py` (live mode) | 完整直连遥操作：SpaceMouse 输入 → UR3 运动 | 需要 UR3 在线 |
+| `src/teleop_ros_bridge.py` | macOS 发送 TwistStamped → Docker rosbridge → twist_relay → servo → UR3 运动 | 需要 UR3 在线 |
+| `scripts/start_ros.sh` | 完整一键启动流程：Docker build + wait for rosbridge + SpaceMouse bridge | 需要 UR3 在线做端到端测试 |
+| `scripts/start_direct.sh` (live) | 完整一键启动直连模式 | 需要 UR3 在线 |
+| Docker ROS2 launch (real hardware) | `use_fake_hardware:=false` with real UR3 | 需要 UR3 在线 + External Control URCap |
+| Axis mapping correctness | SpaceMouse 轴方向与 UR3 实际运动方向的对应关系 | 需要实际操作验证，可能需要调整 config 中的 sign |
+| Dead-man switch (live) | 松开按钮后 UR3 是否立即停止 | 需要 UR3 在线 |
+| Workspace bounds enforcement | TCP 接近边界时速度是否正确归零 | 需要 UR3 在线 |
+| Emergency stop (SIGINT) | Ctrl+C 后 UR3 是否执行 `speedStop()` | 需要 UR3 在线 |
+
+### 已知问题 / Known Issues
+
+- `pyspacemouse` 库在 macOS 上不可用（`easyhid` 找不到 hidapi 动态库 + 无法选择正确 HID 接口），已改用 `hid` 库直接读取
+- 3DxWare 驱动会独占 SpaceMouse HID 设备，必须先 kill 相关进程
+- MoveIt Servo 的 kinematics.yaml 未传给 servo_node（使用 inverse Jacobian 替代，功能正常但无 IK solver）
+- `move_group` 的 `use_sim_time` 参数必须是 bool 类型，不能传字符串
+
 ## UR3 Robot Notes
 
 - RTDE ports: 30001-30004 (primary/secondary), 50001-50003 (RTDE)
