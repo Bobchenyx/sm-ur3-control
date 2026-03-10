@@ -92,8 +92,14 @@ class SpaceMouseReader:
             return True
         except IOError as e:
             print(f"[SpaceMouse] Failed to open device: {e}")
-            print("  Check USB connection and Input Monitoring permission")
-            print("  macOS: System Settings > Privacy & Security > Input Monitoring")
+            # Check if 3DxWare is locking the device
+            if self._is_3dxware_running():
+                print("  3DxWare driver is running and exclusively locks the SpaceMouse.")
+                print("  Please quit 3DxWare first, or run:")
+                print("    killall 3DconnexionHelper 3DxNLServer 3DxRadialMenu 3DxVirtualNumpad")
+            else:
+                print("  Check USB connection and Input Monitoring permission")
+                print("  macOS: System Settings > Privacy & Security > Input Monitoring")
             self._device = None
             return False
 
@@ -180,6 +186,19 @@ class SpaceMouseReader:
         if mag > max_mag:
             return v * (max_mag / mag)
         return v
+
+    @staticmethod
+    def _is_3dxware_running() -> bool:
+        """Check if 3DxWare driver processes are running."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "3Dconnexion"],
+                capture_output=True, timeout=2,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
     def __enter__(self):
         self.open()

@@ -19,7 +19,7 @@ Mode 2 - ROS (for MoveIt/multi-sensor integration):
 
 Key constraints:
 - macOS Docker doesn't support USB passthrough → SpaceMouse always read on macOS host
-- 3DxWare driver must be killed before running (`killall 3DconnexionHelper 3DxNLServer`) — it exclusively locks the HID device
+- 3DxWare driver exclusively locks the raw HID device — scripts detect this and prompt user to kill it (virtual device uses vendor-specific protocol, cannot be used as alternative)
 - SpaceMouse is read via `hidapi` directly (not `pyspacemouse`, which has macOS compatibility issues with `easyhid`)
 
 ## Environment Setup

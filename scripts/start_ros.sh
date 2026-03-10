@@ -12,8 +12,16 @@ if [ ! -f "$PYTHON" ]; then
     exit 1
 fi
 
-# Kill 3DxWare if running
-killall 3DconnexionHelper 3DxNLServer 3DxRadialMenu 3DxVirtualNumpad 2>/dev/null || true
+# Warn if 3DxWare is running
+if pgrep -f 3Dconnexion > /dev/null 2>&1; then
+    echo "WARNING: 3DxWare driver is running and will block SpaceMouse access."
+    echo "  To quit it: killall 3DconnexionHelper 3DxNLServer 3DxRadialMenu 3DxVirtualNumpad"
+    read -p "  Kill 3DxWare now? [y/N] " answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        killall 3DconnexionHelper 3DxNLServer 3DxRadialMenu 3DxVirtualNumpad 2>/dev/null || true
+        echo "  3DxWare killed."
+    fi
+fi
 
 # Build and start Docker container
 echo "Starting Docker container..."
