@@ -1,0 +1,16 @@
+services:
+  ur3_teleop:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "9090:9090"   # rosbridge WebSocket
+      - "50002:50002" # UR reverse connection
+    environment:
+      - ROBOT_IP=${ROBOT_IP:-192.168.1.2}
+      - ROS_DOMAIN_ID=0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../config:/config:ro
+    restart: unless-stopped
