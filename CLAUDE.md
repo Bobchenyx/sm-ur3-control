@@ -97,20 +97,24 @@ All tunable parameters in `config/teleop_config.yaml`:
 | macOS → rosbridge 连通性 | 从 macOS 用 roslibpy 连接 Docker 内 rosbridge，确认 57 个 topic 可见 | 2026-03-10 |
 | conda 环境 `sm-ur3` | Python 3.12, hidapi/numpy/pyyaml/roslibpy/ur-rtde 均安装验证通过 | 2026-03-11 |
 | `ur-rtde` RTDE 连接 | `RTDEReceiveInterface` + `RTDEControlInterface` 均连接成功，能读 TCP 位姿和关节角 | 2026-03-11 |
-| `src/ur3_controller.py` (servoL) | 连接真实 UR3 (192.168.0.2)，servoL 控制 Z 轴平移正常，死人开关 + Ctrl+C 安全退出正常 | 2026-03-11 |
+| `src/ur3_controller.py` (servoL) | 连接真实 UR3 (192.168.0.2)，servoL 控制 Z 轴平移正常 | 2026-03-11 |
 | `moveJ` 安全姿态复位 | 通过 `moveJ` 将 UR3 移至远离奇异点的姿态 [0,-50,-90,-40,-90,0]°，正常工作 | 2026-03-11 |
+| Dead-man switch (live) | 松开 SpaceMouse 按钮后 UR3 立即停止运动，多次验证一致 | 2026-03-11 |
+| Emergency stop (SIGINT) | Ctrl+C 后正常执行 `servoStop()` + 断开连接，UR3 安全停止 | 2026-03-11 |
+| `src/teleop_direct.py` (live, 平移) | SpaceMouse 平移输入 → UR3 Z 轴运动正常，X 轴运动正常 | 2026-03-11 |
+| `speedL` → 保护停止问题复现 | `speedL` 在遥操作中方向切换时触发 "position deviates from path: Base"，已确认并改用 `servoL` | 2026-03-11 |
 
 ### ❌ Not Yet Verified / 未验证
 
 | Component | What Needs Testing | Blocker |
 |-----------|-------------------|---------|
 | `src/teleop_direct.py` (full 6DOF live) | 完整 6DOF 遥操作：平移 + 旋转同时控制 | 需要调整 rotation_scale 参数后验证 |
+| Axis mapping correctness | SpaceMouse 轴方向与 UR3 实际运动方向的对应关系 | 需要更多实际操作验证，可能需要调整 sign |
+| Workspace bounds enforcement | TCP 接近边界时速度是否正确归零 | 需要 UR3 在线，向边界移动测试 |
+| `scripts/start_direct.sh` (live) | 完整一键启动直连模式（脚本流程，非手动命令） | 直接运行脚本验证 |
 | `src/teleop_ros_bridge.py` | macOS 发送 TwistStamped → Docker rosbridge → twist_relay → servo → UR3 运动 | 需要 UR3 在线 |
 | `scripts/start_ros.sh` | 完整一键启动流程 | 需要 UR3 在线做端到端测试 |
-| `scripts/start_direct.sh` (live) | 完整一键启动直连模式 | 需要 UR3 在线 |
 | Docker ROS2 launch (real hardware) | `use_fake_hardware:=false` with real UR3 | 需要 UR3 在线 + External Control URCap |
-| Axis mapping correctness | SpaceMouse 轴方向与 UR3 实际运动方向的对应关系 | 需要更多实际操作验证 |
-| Workspace bounds enforcement | TCP 接近边界时速度是否正确归零 | 需要 UR3 在线 |
 
 ### 已知问题 / Known Issues
 
