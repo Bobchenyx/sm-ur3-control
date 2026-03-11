@@ -71,7 +71,11 @@ class UR3Controller:
         return self._rtde_r.getActualQ()
 
     def send_velocity(self, linear: list, angular: list):
-        """Send Cartesian velocity command with safety enforcement.
+        """Send Cartesian velocity via servoL (incremental position control).
+
+        Reads current TCP pose, applies velocity * dt as position increment,
+        and sends target via servoL. This avoids speedL's internal trajectory
+        planner which causes 'position deviates from path' protective stops.
 
         Args:
             linear: [vx, vy, vz] in m/s, robot base frame
@@ -90,14 +94,28 @@ class UR3Controller:
         # Workspace enforcement: zero out components moving out of bounds
         linear = self._enforce_workspace(linear)
 
+        # Debug: print non-zero commands
         speed_vector = list(linear) + list(angular)
-        self._rtde_c.speedL(speed_vector, self.acceleration, self.dt)
+        if any(abs(v) > 1e-6 for v in speed_vector):
+            print(f"[CMD] lin=[{linear[0]:+.4f},{linear[1]:+.4f},{linear[2]:+.4f}] "
+                  f"ang=[{angular[0]:+.4f},{angular[1]:+.4f},{angular[2]:+.4f}]", flush=True)
+
+        # Compute target pose = current pose + velocity * dt
+        current_pose = self.get_tcp_pose()
+        target_pose = list(current_pose)
+        for i in range(3):
+            target_pose[i] += float(linear[i]) * self.dt
+            target_pose[i + 3] += float(angular[i]) * self.dt
+
+        # servoL: designed for external real-time control, no internal trajectory planner
+        # lookahead_time: 0.1s, gain: 300 (standard values for smooth motion)
+        self._rtde_c.servoL(target_pose, 0.0, 0.0, self.dt, 0.1, 300)
 
     def stop(self):
         """Immediately stop robot motion."""
         if self._connected and self._rtde_c is not None:
             try:
-                self._rtde_c.speedStop()
+                self._rtde_c.servoStop()
             except Exception:
                 pass
 

@@ -1,15 +1,15 @@
 # Teleop Configuration for SpaceMouse → UR3 Control
 
 robot:
-  ip: "192.168.1.2"          # UR3 IP address on LAN
+  ip: "192.168.0.2"          # UR3 IP address on LAN
   rtde_frequency: 125         # Hz, RTDE communication rate
   payload_kg: 0.5             # End-effector payload in kg
 
 spacemouse:
   deadzone: 0.05              # Raw values below this are zeroed
   # Scale factors: m/s per unit (translation), rad/s per unit (rotation)
-  translation_scale: [0.10, 0.10, 0.10]   # [x, y, z]
-  rotation_scale: [0.20, 0.20, 0.20]      # [rx, ry, rz]
+  translation_scale: [0.03, 0.03, 0.03]   # [x, y, z] - very low for initial testing
+  rotation_scale: [0.05, 0.05, 0.05]       # [rx, ry, rz] - low for initial testing
   # Axis mapping: [spacemouse_axis, sign]
   # SpaceMouse axes don't always align with robot base frame
   # SpaceMouse: +x=right, +y=forward, +z=up (push down)
@@ -23,16 +23,16 @@ spacemouse:
     rz: { sm_axis: "yaw", sign: -1 }
 
 safety:
-  max_linear_speed: 0.15       # m/s - start low, increase when comfortable
-  max_angular_speed: 0.30      # rad/s
+  max_linear_speed: 0.05       # m/s - start low, increase when comfortable
+  max_angular_speed: 0.10      # rad/s
   workspace_bounds:
     min: [-0.5, -0.5, 0.02]   # meters in robot base frame (z=0.02 above table)
     max: [0.5, 0.5, 0.5]
 
 control:
-  mode: "speedL"               # "speedL" (velocity) or "servoL" (pose)
-  loop_rate: 125               # Hz
-  acceleration: 0.5            # m/s^2 for speedL
+  mode: "servoL"               # servoL (incremental position control via RTDE)
+  loop_rate: 125               # Hz (servoL designed for high-frequency control)
+  acceleration: 0.25           # m/s^2 for speedL
   deadman_button: 0            # SpaceMouse button index for dead-man switch
 
 ros_bridge:

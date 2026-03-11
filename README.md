@@ -6,11 +6,11 @@ Real-time teleoperation of a UR3 robot arm using a 3Dconnexion SpaceMouse Compac
 
 ```
 SpaceMouse (USB HID)  →  macOS Python  →  UR3 (TCP/IP RTDE)
-     6DOF input          scaling/safety      speedL velocity control
+     6DOF input          scaling/safety      servoL position control
 ```
 
 Two control modes:
-- **Direct mode** (recommended): macOS controls UR3 directly via RTDE protocol, < 8ms latency
+- **Direct mode** (recommended): macOS controls UR3 directly via RTDE `servoL`, < 8ms latency
 - **ROS mode**: Docker-based ROS2 Humble + MoveIt Servo, for collision detection / multi-sensor integration
 
 ## Quick Start
@@ -26,6 +26,12 @@ conda create -n sm-ur3 python=3.12
 conda activate sm-ur3
 pip install -r requirements.txt
 ```
+
+> **Note**: `ur-rtde` requires C++ compilation. If `pip install` fails, install build deps first:
+> ```bash
+> conda install -c conda-forge cmake=3.31 boost=1.84
+> PATH="/opt/anaconda3/envs/sm-ur3/bin:$PATH" CMAKE_PREFIX_PATH="/opt/anaconda3/envs/sm-ur3" pip install ur-rtde
+> ```
 
 ### 2. macOS Permissions
 
@@ -62,9 +68,9 @@ Requires Docker Desktop:
 | Mechanism | Description |
 |-----------|-------------|
 | Dead-man switch | Must hold button 0 to move, release stops immediately |
-| Velocity clamping | By vector magnitude (preserves direction), default 0.15 m/s |
+| Velocity clamping | By vector magnitude (preserves direction), default 0.05 m/s |
 | Workspace bounds | Velocity zeroed in directions that would exceed bounds |
-| Signal handlers | Ctrl+C triggers `speedStop()` before exit |
+| Signal handlers | Ctrl+C triggers `servoStop()` before exit |
 
 ## Configuration
 
@@ -72,11 +78,11 @@ All parameters in `config/teleop_config.yaml`:
 
 ```yaml
 robot:
-  ip: "192.168.1.2"         # UR3 IP address on LAN
+  ip: "192.168.0.2"         # UR3 IP address on LAN
 
 safety:
-  max_linear_speed: 0.15     # m/s — start low on first use
-  max_angular_speed: 0.30    # rad/s
+  max_linear_speed: 0.05     # m/s — start low on first use
+  max_angular_speed: 0.10    # rad/s
   workspace_bounds:
     min: [-0.5, -0.5, 0.02]  # z=0.02 prevents table collision
     max: [0.5, 0.5, 0.5]
@@ -91,7 +97,7 @@ spacemouse:
 ```
 src/
   spacemouse_reader.py    # SpaceMouse HID reading, deadzone, axis mapping
-  ur3_controller.py       # UR3 RTDE control, safety enforcement, shutdown
+  ur3_controller.py       # UR3 RTDE control (servoL), safety enforcement, shutdown
   teleop_direct.py        # Direct mode main loop
   teleop_ros_bridge.py    # ROS bridge mode main loop
 config/
@@ -105,6 +111,7 @@ ros2_ws/                  # ROS2 workspace (optional)
 
 ## Notes
 
-- 3DxWare driver exclusively locks the SpaceMouse — start scripts kill it automatically
-- On first UR3 connection, set `max_linear_speed` low (e.g. 0.05)
+- 3DxWare driver exclusively locks the SpaceMouse — start scripts detect and prompt to kill
+- On first UR3 connection, keep `max_linear_speed` low (e.g. 0.05)
 - Direct mode uses RTDE protocol, no External Control URCap needed
+- `speedL` causes "position deviates from path" protective stops during teleoperation — use `servoL` instead

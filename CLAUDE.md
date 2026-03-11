@@ -10,7 +10,7 @@ SpaceMouse Compact → UR3 robot arm teleoperation system. macOS host reads the 
 
 ```
 Mode 1 - Direct (recommended, no ROS):
-  macOS: SpaceMouse (HID) → spacemouse_reader.py → ur3_controller.py → UR3 (RTDE TCP/IP)
+  macOS: SpaceMouse (HID) → spacemouse_reader.py → ur3_controller.py → UR3 (RTDE servoL)
 
 Mode 2 - ROS (for MoveIt/multi-sensor integration):
   macOS: SpaceMouse → spacemouse_reader.py → roslibpy (WebSocket:9090)
@@ -33,6 +33,10 @@ brew install hidapi
 
 # Python dependencies
 pip install -r requirements.txt
+
+# ur-rtde build dependencies (if pip install ur-rtde fails)
+conda install -c conda-forge cmake=3.31 boost=1.84
+PATH="/opt/anaconda3/envs/sm-ur3/bin:$PATH" CMAKE_PREFIX_PATH="/opt/anaconda3/envs/sm-ur3" pip install ur-rtde
 ```
 
 ## Commands
@@ -54,7 +58,7 @@ docker compose -f docker/docker-compose.yml down
 ## Key Configuration
 
 All tunable parameters in `config/teleop_config.yaml`:
-- `robot.ip` — UR3 IP address on LAN (default 192.168.1.2)
+- `robot.ip` — UR3 IP address on LAN (default 192.168.0.2)
 - `spacemouse.axis_map` — Mapping between SpaceMouse and robot base frame axes (with sign flips)
 - `safety.max_linear_speed` / `max_angular_speed` — Velocity limits (start low)
 - `safety.workspace_bounds` — Soft workspace limits (z min prevents table collision)
@@ -65,13 +69,13 @@ All tunable parameters in `config/teleop_config.yaml`:
 - **Dead-man switch**: Robot only moves while SpaceMouse button 0 is held
 - **Workspace bounds**: Velocity components moving TCP outside bounds are zeroed (soft limits, not hard-stop)
 - **Velocity clamping**: By vector magnitude (preserves direction) not per-axis
-- **Signal handlers**: `ur3_controller.py` catches SIGINT/SIGTERM and calls `speedStop()` before exit
+- **Signal handlers**: `ur3_controller.py` catches SIGINT/SIGTERM and calls `servoStop()` before exit
 - **ROS timeout watchdog**: `twist_relay_node.py` sends zero velocity if no input received within 150ms
 
 ## File Roles
 
 - `src/spacemouse_reader.py` — HID reading via `hidapi`, deadzone filtering, axis mapping, velocity scaling. Opens device by `usage_page=1, usage=8` to select the correct HID interface.
-- `src/ur3_controller.py` — ur_rtde wrapper with workspace enforcement and safe shutdown
+- `src/ur3_controller.py` — ur_rtde wrapper using `servoL` for real-time control, with workspace enforcement and safe shutdown
 - `src/teleop_direct.py` — Main loop for direct mode (125Hz, `--dry-run` for SpaceMouse-only testing)
 - `src/teleop_ros_bridge.py` — Main loop for ROS bridge mode (publishes TwistStamped via roslibpy)
 - `ros2_ws/src/sm_teleop/` — ROS2 package with twist relay node and launch file
@@ -89,41 +93,46 @@ All tunable parameters in `config/teleop_config.yaml`:
 | `src/teleop_direct.py --dry-run` | 实际运行，确认 SpaceMouse 数据读取、deadzone 过滤、axis mapping、dead-man switch 均工作 | 2026-03-10 |
 | `docker/Dockerfile` | `docker compose build` 成功，所有 apt 包安装通过，colcon build 通过 | 2026-03-10 |
 | `ros2_ws/src/sm_teleop/` (colcon build) | Docker 内 colcon build 成功，`twist_relay_node` 可执行文件正确安装到 `lib/sm_teleop/` | 2026-03-10 |
-| Docker ROS2 launch (fake hardware) | `ros2 launch sm_teleop ur3_teleop.launch.py use_fake_hardware:=true` — 所有 11 个节点启动成功：ros2_control, move_group ("You can start planning now!"), servo_node_main, rosbridge (port 9090), twist_relay_node | 2026-03-10 |
-| macOS → rosbridge 连通性 | 从 macOS 用 roslibpy 连接 Docker 内 rosbridge，确认 57 个 topic 可见，包括 `/servo_node/delta_twist_cmds` 和 `/spacemouse/twist` | 2026-03-10 |
-| conda 环境 `sm-ur3` | Python 3.12, hidapi/numpy/pyyaml/roslibpy 均安装验证通过 | 2026-03-10 |
+| Docker ROS2 launch (fake hardware) | `ros2 launch sm_teleop ur3_teleop.launch.py use_fake_hardware:=true` — 所有 11 个节点启动成功 | 2026-03-10 |
+| macOS → rosbridge 连通性 | 从 macOS 用 roslibpy 连接 Docker 内 rosbridge，确认 57 个 topic 可见 | 2026-03-10 |
+| conda 环境 `sm-ur3` | Python 3.12, hidapi/numpy/pyyaml/roslibpy/ur-rtde 均安装验证通过 | 2026-03-11 |
+| `ur-rtde` RTDE 连接 | `RTDEReceiveInterface` + `RTDEControlInterface` 均连接成功，能读 TCP 位姿和关节角 | 2026-03-11 |
+| `src/ur3_controller.py` (servoL) | 连接真实 UR3 (192.168.0.2)，servoL 控制 Z 轴平移正常，死人开关 + Ctrl+C 安全退出正常 | 2026-03-11 |
+| `moveJ` 安全姿态复位 | 通过 `moveJ` 将 UR3 移至远离奇异点的姿态 [0,-50,-90,-40,-90,0]°，正常工作 | 2026-03-11 |
 
 ### ❌ Not Yet Verified / 未验证
 
 | Component | What Needs Testing | Blocker |
 |-----------|-------------------|---------|
-| `src/ur3_controller.py` | 连接真实 UR3，验证 RTDE 连接、`speedL` 指令、workspace enforcement、emergency stop | 需要 UR3 机械臂在线 + `ur-rtde` pip 安装 |
-| `src/teleop_direct.py` (live mode) | 完整直连遥操作：SpaceMouse 输入 → UR3 运动 | 需要 UR3 在线 |
+| `src/teleop_direct.py` (full 6DOF live) | 完整 6DOF 遥操作：平移 + 旋转同时控制 | 需要调整 rotation_scale 参数后验证 |
 | `src/teleop_ros_bridge.py` | macOS 发送 TwistStamped → Docker rosbridge → twist_relay → servo → UR3 运动 | 需要 UR3 在线 |
-| `scripts/start_ros.sh` | 完整一键启动流程：Docker build + wait for rosbridge + SpaceMouse bridge | 需要 UR3 在线做端到端测试 |
+| `scripts/start_ros.sh` | 完整一键启动流程 | 需要 UR3 在线做端到端测试 |
 | `scripts/start_direct.sh` (live) | 完整一键启动直连模式 | 需要 UR3 在线 |
 | Docker ROS2 launch (real hardware) | `use_fake_hardware:=false` with real UR3 | 需要 UR3 在线 + External Control URCap |
-| Axis mapping correctness | SpaceMouse 轴方向与 UR3 实际运动方向的对应关系 | 需要实际操作验证，可能需要调整 config 中的 sign |
-| Dead-man switch (live) | 松开按钮后 UR3 是否立即停止 | 需要 UR3 在线 |
+| Axis mapping correctness | SpaceMouse 轴方向与 UR3 实际运动方向的对应关系 | 需要更多实际操作验证 |
 | Workspace bounds enforcement | TCP 接近边界时速度是否正确归零 | 需要 UR3 在线 |
-| Emergency stop (SIGINT) | Ctrl+C 后 UR3 是否执行 `speedStop()` | 需要 UR3 在线 |
 
 ### 已知问题 / Known Issues
 
 - `pyspacemouse` 库在 macOS 上不可用（`easyhid` 找不到 hidapi 动态库 + 无法选择正确 HID 接口），已改用 `hid` 库直接读取
 - 3DxWare 驱动会独占 SpaceMouse HID 设备，必须先 kill 相关进程
+- `speedL` 不适合遥操作：其内部轨迹规划器在方向切换时触发 "position deviates from path: Base" 保护停止，已改用 `servoL`
+- `ur-rtde` 在 macOS (Apple Silicon) + CMake 4.x + Boost 1.90 下编译失败，需要 conda 安装 cmake=3.31 + boost=1.84
 - MoveIt Servo 的 kinematics.yaml 未传给 servo_node（使用 inverse Jacobian 替代，功能正常但无 IK solver）
 - `move_group` 的 `use_sim_time` 参数必须是 bool 类型，不能传字符串
 
 ## UR3 Robot Notes
 
+- Robot IP: 192.168.0.2 (subnet 255.255.255.0)
 - RTDE ports: 30001-30004 (primary/secondary), 50001-50003 (RTDE)
 - Joint names: `shoulder_pan_joint`, `shoulder_lift_joint`, `elbow_joint`, `wrist_1_joint`, `wrist_2_joint`, `wrist_3_joint`
 - The UR3 requires the External Control URCap for the ROS driver; direct mode uses RTDE which doesn't need it
-- `speedL` is used for velocity control (maps naturally to SpaceMouse 6DOF input)
+- Use `servoL` for real-time teleoperation control (not `speedL` — see Known Issues)
+- Wrist singularity: avoid `wrist_2_joint ≈ 0°` — use safe pose [0,-50,-90,-40,-90,0]° as home position
+- Safe pose home: `moveJ([0, -50, -90, -40, -90, 0]°, speed=0.3, accel=0.3)`
 
 ## macOS-Specific
 
 - SpaceMouse requires Input Monitoring permission: System Settings > Privacy & Security > Input Monitoring (grant to Terminal/IDE)
 - 3DxWare driver (`3DconnexionHelper`, `3DxNLServer`, etc.) exclusively locks the SpaceMouse HID device — must be killed before running
-- `ur-rtde` on Apple Silicon needs `cmake` and `boost` from Homebrew: `brew install cmake boost`
+- `ur-rtde` on Apple Silicon needs `cmake` and `boost` via conda (not Homebrew — Boost 1.90 missing `boost_system` cmake config)
