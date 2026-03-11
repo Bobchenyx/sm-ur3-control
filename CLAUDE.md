@@ -111,6 +111,7 @@ All tunable parameters in `config/teleop_config.yaml`:
 | `src/teleop_direct.py` (full 6DOF live) | 完整 6DOF 遥操作：平移 + 旋转同时控制 | 需要调整 rotation_scale 参数后验证 |
 | Axis mapping correctness | SpaceMouse 轴方向与 UR3 实际运动方向的对应关系 | 需要更多实际操作验证，可能需要调整 sign |
 | Workspace bounds enforcement | TCP 接近边界时速度是否正确归零 | 需要 UR3 在线，向边界移动测试 |
+| E-stop / fault 检测 + 自动重连 | 紧急停止 → 程序检测并暂停 → 示教器恢复后自动重连 | 需要实际按下急停按钮测试 |
 | `scripts/start_direct.sh` (live) | 完整一键启动直连模式（脚本流程，非手动命令） | 直接运行脚本验证 |
 | `src/teleop_ros_bridge.py` | macOS 发送 TwistStamped → Docker rosbridge → twist_relay → servo → UR3 运动 | 需要 UR3 在线 |
 | `scripts/start_ros.sh` | 完整一键启动流程 | 需要 UR3 在线做端到端测试 |
