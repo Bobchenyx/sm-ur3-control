@@ -70,6 +70,61 @@ class UR3Controller:
             return [0.0] * 6
         return self._rtde_r.getActualQ()
 
+    def check_status(self) -> str:
+        """Check robot safety status. Returns status string.
+
+        Returns:
+            'ok' — normal operation
+            'protective_stop' — protective stop (can be cleared on pendant)
+            'emergency_stop' — e-stop pressed
+            'fault' — other fault
+            'disconnected' — RTDE connection lost
+        """
+        if not self._connected or self._rtde_r is None:
+            return "disconnected"
+        try:
+            safety_mode = self._rtde_r.getSafetyMode()
+            # Safety modes: 1=normal, 2=reduced, 3=protective_stop,
+            # 4=recovery, 5=safeguard_stop, 6=system_emergency_stop,
+            # 7=robot_emergency_stop, 8=violation, 9=fault
+            if safety_mode in (6, 7):
+                return "emergency_stop"
+            elif safety_mode in (3, 4):
+                return "protective_stop"
+            elif safety_mode in (8, 9):
+                return "fault"
+            return "ok"
+        except Exception:
+            return "disconnected"
+
+    def reconnect(self) -> bool:
+        """Reconnect RTDE interfaces after e-stop/fault recovery."""
+        print("[UR3] Attempting reconnect...")
+        self._connected = False
+        # Close old interfaces
+        try:
+            if self._rtde_c is not None:
+                self._rtde_c.disconnect()
+        except Exception:
+            pass
+        try:
+            if self._rtde_r is not None:
+                self._rtde_r.disconnect()
+        except Exception:
+            pass
+        self._rtde_c = None
+        self._rtde_r = None
+        # Reconnect
+        try:
+            self._rtde_r = rtde_receive.RTDEReceiveInterface(self.ip)
+            self._rtde_c = rtde_control.RTDEControlInterface(self.ip)
+            self._connected = True
+            print(f"[UR3] Reconnected. TCP pose: {self._format_pose(self.get_tcp_pose())}")
+            return True
+        except Exception as e:
+            print(f"[UR3] Reconnect failed: {e}")
+            return False
+
     def send_velocity(self, linear: list, angular: list):
         """Send Cartesian velocity via servoL (incremental position control).
 
@@ -101,15 +156,19 @@ class UR3Controller:
                   f"ang=[{angular[0]:+.4f},{angular[1]:+.4f},{angular[2]:+.4f}]", flush=True)
 
         # Compute target pose = current pose + velocity * dt
-        current_pose = self.get_tcp_pose()
-        target_pose = list(current_pose)
-        for i in range(3):
-            target_pose[i] += float(linear[i]) * self.dt
-            target_pose[i + 3] += float(angular[i]) * self.dt
+        try:
+            current_pose = self.get_tcp_pose()
+            target_pose = list(current_pose)
+            for i in range(3):
+                target_pose[i] += float(linear[i]) * self.dt
+                target_pose[i + 3] += float(angular[i]) * self.dt
 
-        # servoL: designed for external real-time control, no internal trajectory planner
-        # lookahead_time: 0.1s, gain: 300 (standard values for smooth motion)
-        self._rtde_c.servoL(target_pose, 0.0, 0.0, self.dt, 0.1, 300)
+            # servoL: designed for external real-time control, no internal trajectory planner
+            # lookahead_time: 0.1s, gain: 300 (standard values for smooth motion)
+            self._rtde_c.servoL(target_pose, 0.0, 0.0, self.dt, 0.1, 300)
+        except Exception:
+            # servoL failed — likely e-stop or protective stop
+            pass
 
     def stop(self):
         """Immediately stop robot motion."""

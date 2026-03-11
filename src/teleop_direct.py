@@ -45,6 +45,8 @@ def main():
 
     running = True
     iteration = 0
+    robot_ok = True  # Track robot state for fault recovery
+    status_check_interval = loop_rate  # Check robot status every 1 second
 
     try:
         while running:
@@ -71,11 +73,39 @@ def main():
                           f"raw_ang=[{raw.wx:+.3f}, {raw.wy:+.3f}, {raw.wz:+.3f}]",
                           flush=True)
             else:
-                controller.send_velocity(linear, angular)
-                if iteration % print_interval == 0:
-                    pose = controller.get_tcp_pose()
-                    print(f"[TCP] x={pose[0]:+.4f} y={pose[1]:+.4f} z={pose[2]:+.4f} | "
-                          f"rx={pose[3]:+.3f} ry={pose[4]:+.3f} rz={pose[5]:+.3f}")
+                # Periodic robot status check
+                if iteration % status_check_interval == 0:
+                    status = controller.check_status()
+                    if status != "ok" and robot_ok:
+                        robot_ok = False
+                        if status == "emergency_stop":
+                            print("\n[UR3] *** EMERGENCY STOP detected ***")
+                            print("  Release e-stop → power on → unlock on teach pendant")
+                        elif status == "protective_stop":
+                            print("\n[UR3] *** Protective stop detected ***")
+                            print("  Clear on teach pendant → unlock brakes")
+                        elif status == "fault":
+                            print("\n[UR3] *** Robot fault detected ***")
+                            print("  Check teach pendant for error details")
+                        elif status == "disconnected":
+                            print("\n[UR3] *** Connection lost ***")
+                        print("  Waiting for recovery... (Ctrl+C to quit)")
+
+                    elif status == "ok" and not robot_ok:
+                        # Robot recovered, reconnect
+                        print("\n[UR3] Robot status OK, reconnecting...")
+                        if controller.reconnect():
+                            robot_ok = True
+                            print("[UR3] Reconnected — teleoperation resumed\n")
+                        else:
+                            print("[UR3] Reconnect failed, still waiting...")
+
+                if robot_ok:
+                    controller.send_velocity(linear, angular)
+                    if iteration % print_interval == 0:
+                        pose = controller.get_tcp_pose()
+                        print(f"[TCP] x={pose[0]:+.4f} y={pose[1]:+.4f} z={pose[2]:+.4f} | "
+                              f"rx={pose[3]:+.3f} ry={pose[4]:+.3f} rz={pose[5]:+.3f}")
 
             iteration += 1
 
